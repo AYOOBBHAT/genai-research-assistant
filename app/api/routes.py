@@ -6,7 +6,6 @@ from pathlib import Path
 import shutil
 import numpy as np
 from sentence_transformers import SentenceTransformer
-
 from app.rag.pdf_loader import load_pdf_text
 from app.rag.pipeline import build_index_from_texts
 from app.rag.vector_store import FaissVectorStore
