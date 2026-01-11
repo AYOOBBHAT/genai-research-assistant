@@ -12,3 +12,4 @@ python-multipart
 langgraph
 langchain-core
 langchain-community
+torch==2.1.2

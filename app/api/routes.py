@@ -14,6 +14,8 @@ from app.rag.retriever import Retriever
 from app.rag.pdf_loader import load_pdf_text
 
 
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = "data"
 VECTOR_STORE_DIR = "vector_store"
@@ -21,21 +23,14 @@ VECTOR_STORE_DIR = "vector_store"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(VECTOR_STORE_DIR, exist_ok=True)
 
-logger = logging.getLogger(__name__)
-router = APIRouter()
 
-
-
-logger.info("Loading embedding model...")
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 embed_fn = lambda text: np.array(embed_model.encode(text))
-logger.info(" Embedding model loaded")
-
 
 
 class QueryRequest(BaseModel):
     query: str
-    top_k: int = 3
+    top_k: int = 4
 
 
 class QueryResponse(BaseModel):
@@ -55,58 +50,52 @@ async def upload_pdf(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
-    logger.info(f" PDF uploaded: {file.filename}")
-    logger.info(" Building vector index...")
+    # Reset state
+    state.index_ready = False
+    state.vector_store = None
+    state.retriever = None
 
-    try:
-        texts = load_pdf_text(file_path)
-        if not texts:
-            raise ValueError("No text extracted from PDF")
+    logger.info(f"📄 Uploaded {file.filename}")
 
-    
-        vector_store = build_index_from_texts(texts, embed_fn)
-
-        
-        vector_store.save(VECTOR_STORE_DIR)
-
-    
-        retriever = Retriever(vector_store)
-
-        
-        state.vector_store = vector_store
-        state.retriever = retriever
-        state.index_ready = True
-
-        logger.info(" Vector index built and ready")
-
-        return {
-            "message": "PDF uploaded and indexed successfully",
-            "filename": file.filename,
-            "chunks": len(texts)
-        }
-
-    except Exception as e:
-        logger.exception(" Failed to build index")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "message": "PDF uploaded successfully. Index will be built on first query.",
+        "filename": file.filename
+    }
 
 
 
 @router.post("/query", response_model=QueryResponse)
 async def query_rag(request: QueryRequest):
-    if not state.index_ready or state.retriever is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Upload and index a PDF first"
-        )
+    if not state.index_ready:
+        logger.info("📦 Building vector index (lazy)…")
 
-    try:
-        result = rag_answer(
-            query=request.query,
-            retriever=state.retriever,
-            top_k=request.top_k
-        )
-        return result
+        pdfs = [
+            os.path.join(UPLOAD_DIR, f)
+            for f in os.listdir(UPLOAD_DIR)
+            if f.endswith(".pdf")
+        ]
 
-    except Exception as e:
-        logger.exception("Query failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        if not pdfs:
+            raise HTTPException(400, "No PDF uploaded yet")
+
+        texts = []
+        for pdf in pdfs:
+            texts.extend(load_pdf_text(pdf))
+
+        if not texts:
+            raise HTTPException(400, "No text extracted from PDF")
+
+        store = build_index_from_texts(texts, embed_fn)
+        store.save(VECTOR_STORE_DIR)
+
+        state.vector_store = store
+        state.retriever = Retriever(store)
+        state.index_ready = True
+
+        logger.info("Index built")
+
+    return rag_answer(
+        query=request.query,
+        retriever=state.retriever,
+        top_k=request.top_k
+    )
