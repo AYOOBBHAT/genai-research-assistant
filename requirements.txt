@@ -9,3 +9,6 @@ tavily-python
 python-dotenv
 pypdf
 python-multipart
+langgraph
+langchain-core
+langchain-community
