@@ -1,32 +1,47 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
+from typing import List, Dict, Any
 import os
 import numpy as np
+import logging
 
 from sentence_transformers import SentenceTransformer
 
 from app.core import state
-from app.agent.rag_agent import build_agent
-from app.rag.pdf_loader import load_pdf_text
-from app.rag.pipeline import build_index_from_texts
+from app.rag.pipeline import build_index_from_texts, rag_answer
+from app.rag.vector_store import FaissVectorStore
 from app.rag.retriever import Retriever
+from app.rag.pdf_loader import load_pdf_text
 
 
 
 UPLOAD_DIR = "data"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+VECTOR_STORE_DIR = "vector_store"
 
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(VECTOR_STORE_DIR, exist_ok=True)
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+
+logger.info("Loading embedding model...")
+embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+embed_fn = lambda text: np.array(embed_model.encode(text))
+logger.info(" Embedding model loaded")
+
 
 
 class QueryRequest(BaseModel):
     query: str
-    top_k: int = 4
+    top_k: int = 3
 
 
-
-embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-embed_fn = lambda text: np.array(embed_model.encode(text))
+class QueryResponse(BaseModel):
+    answer: str
+    sources: List[Dict[str, Any]]
+    confidence: float
 
 
 
@@ -40,64 +55,58 @@ async def upload_pdf(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
-    
-    state.index_ready = False
-    state.vector_store = None
-    state.retriever = None
-    state.agent = None
+    logger.info(f" PDF uploaded: {file.filename}")
+    logger.info(" Building vector index...")
 
-    return {
-        "message": "PDF uploaded successfully. Index will be built on first query.",
-        "filename": file.filename,
-    }
-
-
-
-@router.post("/query")
-async def query_rag(request: QueryRequest):
     try:
+        texts = load_pdf_text(file_path)
+        if not texts:
+            raise ValueError("No text extracted from PDF")
+
+    
+        vector_store = build_index_from_texts(texts, embed_fn)
+
         
-        if not state.index_ready:
-            print("📦 Building vector index (one-time)...")
+        vector_store.save(VECTOR_STORE_DIR)
 
-            
-            texts = []
-            for filename in os.listdir(UPLOAD_DIR):
-                if filename.endswith(".pdf"):
-                    pdf_path = os.path.join(UPLOAD_DIR, filename)
-                    texts.extend(load_pdf_text(pdf_path))
+    
+        retriever = Retriever(vector_store)
 
-            if not texts:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No PDF documents found. Upload a PDF first.",
-                )
+        
+        state.vector_store = vector_store
+        state.retriever = retriever
+        state.index_ready = True
 
-            
-            vector_store = build_index_from_texts(texts, embed_fn)
-
-            
-            retriever = Retriever(vector_store)
-
-            
-            agent = build_agent(retriever)
-
-            
-            state.vector_store = vector_store
-            state.retriever = retriever
-            state.agent = agent
-            state.index_ready = True
-
-            print("✅ Index built successfully")
-
-
-        response = state.agent.invoke({"input": request.query})
+        logger.info(" Vector index built and ready")
 
         return {
-            "answer": response["output"]
+            "message": "PDF uploaded and indexed successfully",
+            "filename": file.filename,
+            "chunks": len(texts)
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
+        logger.exception(" Failed to build index")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@router.post("/query", response_model=QueryResponse)
+async def query_rag(request: QueryRequest):
+    if not state.index_ready or state.retriever is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload and index a PDF first"
+        )
+
+    try:
+        result = rag_answer(
+            query=request.query,
+            retriever=state.retriever,
+            top_k=request.top_k
+        )
+        return result
+
+    except Exception as e:
+        logger.exception("Query failed")
         raise HTTPException(status_code=500, detail=str(e))
