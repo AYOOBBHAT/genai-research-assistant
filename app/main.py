@@ -1,16 +1,21 @@
 import logging
-import numpy as np
 from fastapi import FastAPI
-from sentence_transformers import SentenceTransformer
 
-from app.api import routes
-from app.agent.rag_agent import build_agent
-from app.config.settings import VECTOR_STORE_PATH
-from app.rag.vector_store import FaissVectorStore
-from app.rag.retriever import Retriever
+from sentence_transformers import SentenceTransformer
+import numpy as np
+
+from app.api.routes import router
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+logger.info("🔹 Loading embedding model (once)...")
+embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+embed_fn = lambda text: np.array(embed_model.encode(text))
+logger.info("✅ Embedding model loaded")
+
 
 app = FastAPI(
     title="GenAI Research Assistant",
@@ -18,30 +23,13 @@ app = FastAPI(
 )
 
 
-@app.on_event("startup")
-def startup_event():
-    logger.info(f"📂 Loading vector store from: {VECTOR_STORE_PATH}")
-
-    try:
-        # Embeddings
-        embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-        embed_fn = lambda text: np.array(embed_model.encode(text))
-
-        # Load vector store
-        store = FaissVectorStore.load(str(VECTOR_STORE_PATH))
-        retriever = Retriever(embed_fn, store)
-
-        # Build agent
-        routes.agent = build_agent(retriever)
-
-        logger.info("✅ Agent initialized successfully")
-
-    except Exception as e:
-        routes.agent = None
-        logger.error(f"❌ Failed to initialize agent: {e}")
+app.state.embed_fn = embed_fn
+app.state.vector_store = None
+app.state.retriever = None
+app.state.agent = None
 
 
-app.include_router(routes.router)
+app.include_router(router)
 
 
 @app.get("/")
