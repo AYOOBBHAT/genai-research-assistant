@@ -12,17 +12,13 @@ class FaissVectorStore:
         self.id_to_meta: Dict[int, Dict[str, Any]] = {}
         self.next_id = 0
 
-    # -------------------------------------------------
-    # Internal: ensure FAISS index exists
-    # -------------------------------------------------
+   
     def _ensure_index(self, dim: int):
         if self.index is None:
             self.index = faiss.IndexFlatL2(dim)
             self.dim = dim
 
-    # -------------------------------------------------
-    # Add embeddings + metadata
-    # -------------------------------------------------
+   
     def add_texts(
         self,
         embeddings: List[np.ndarray],
@@ -41,9 +37,7 @@ class FaissVectorStore:
             self.id_to_meta[self.next_id] = meta
             self.next_id += 1
 
-    # -------------------------------------------------
-    # Search
-    # -------------------------------------------------
+    
     def search(self, query_embedding: np.ndarray, k: int = 4):
         if self.index is None:
             return []
@@ -61,9 +55,7 @@ class FaissVectorStore:
 
         return results
 
-    # -------------------------------------------------
-    # Save (NEW SCHEMA)
-    # -------------------------------------------------
+   
     def save(self, path: str):
         os.makedirs(path, exist_ok=True)
 
@@ -79,27 +71,25 @@ class FaissVectorStore:
                 f,
             )
 
-    # -------------------------------------------------
-    # Load (BACKWARD + FORWARD COMPATIBLE)
-    # -------------------------------------------------
+   
     @classmethod
     def load(cls, path: str):
         store = cls()
 
-        # Load FAISS index
+    
         store.index = faiss.read_index(os.path.join(path, "index.faiss"))
 
-        # Load metadata (handle multiple schema versions)
+    
         with open(os.path.join(path, "meta.pkl"), "rb") as f:
             data = pickle.load(f)
 
-            # ---- NEW SCHEMA ----
+        
             if isinstance(data, dict) and "id_to_meta" in data:
                 store.id_to_meta = data["id_to_meta"]
                 store.next_id = data.get("next_id", len(store.id_to_meta))
                 store.dim = data.get("dim")
 
-            # ---- OLD SCHEMA (dict[int, meta]) ----
+            
             elif isinstance(data, dict):
                 store.id_to_meta = data
                 store.next_id = len(data)

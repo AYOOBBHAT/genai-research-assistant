@@ -14,9 +14,6 @@ tavily_client = TavilyClient(
 )
 
 
-# -------------------------------------------------
-# Agent state
-# -------------------------------------------------
 class AgentState(TypedDict):
     query: str
     rag_result: Optional[dict]
@@ -24,9 +21,7 @@ class AgentState(TypedDict):
     confidence: Optional[float]
 
 
-# -------------------------------------------------
-# Tool: Calculator (SAFE)
-# -------------------------------------------------
+
 def calculator_tool(expression: str) -> str:
     allowed_chars = "0123456789+-*/(). "
 
@@ -48,7 +43,7 @@ def web_search_tool(query: str) -> str:
             max_results=5,
         )
 
-        # Combine results into a readable summary
+        
         results = response.get("results", [])
         if not results:
             return "No relevant information found online."
@@ -72,16 +67,16 @@ def router_node(state: AgentState):
 def entry_decision(state: AgentState):
     q = state["query"].lower()
 
-    # Calculator
+    
     if any(char.isdigit() for char in q):
         return "calculator"
 
-    # Web search
+    
     web_keywords = ["latest", "today", "current", "news", "recent"]
     if any(word in q for word in web_keywords):
         return "web_search"
 
-    # Default: RAG
+    
     return "retrieve"
 
 
@@ -101,7 +96,7 @@ def web_search_node(state: AgentState):
     return {
         **state,
         "final_answer": result,
-        "confidence": 0.9,  # external but confident
+        "confidence": 0.9,
     }
 
 

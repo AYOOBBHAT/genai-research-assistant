@@ -9,9 +9,7 @@ from typing import List, Dict, Any, Callable, Optional
 import numpy as np
 
 
-# ---------------------------------------------------------
-# Build FAISS index from raw texts
-# ---------------------------------------------------------
+
 def build_index_from_texts(
     texts: List[str],
     embed_fn: Callable[[str], np.ndarray],
@@ -49,15 +47,13 @@ def build_index_from_texts(
     embeddings = [embed_fn(chunk) for chunk in chunks]
 
     if store is None:
-        store = FaissVectorStore()   # ✅ no constructor args
+        store = FaissVectorStore()   
 
     store.add_texts(embeddings, metadatas)
     return store
 
 
-# ---------------------------------------------------------
-# Default local HF generator (CPU-safe)
-# ---------------------------------------------------------
+
 def default_hf_generator(model_name: str = "gpt2"):
     """
     Lightweight text generator for local testing.
@@ -68,7 +64,7 @@ def default_hf_generator(model_name: str = "gpt2"):
     generator = pipeline(
         "text-generation",
         model=model_name,
-        device=-1   # force CPU
+        device=-1   
     )
 
     def generate(prompt: str, max_new_tokens: int = 50) -> str:
@@ -83,9 +79,7 @@ def default_hf_generator(model_name: str = "gpt2"):
     return generate
 
 
-# ---------------------------------------------------------
-# Main RAG answer function
-# ---------------------------------------------------------
+
 def rag_answer(
     query: str,
     retriever,
@@ -99,7 +93,6 @@ def rag_answer(
     if llm_generate is None:
         llm_generate = default_hf_generator()
 
-    # 1. Retrieve relevant chunks
     results = retriever.retrieve(query, k=top_k)
 
     if not results:
@@ -109,10 +102,10 @@ def rag_answer(
             "confidence": 0.0
         }
 
-    # 2. Build context
+    
     context = "\n\n".join(r["text"] for r in results)
 
-    # 3. Grounded prompt
+
     prompt = f"""
 You are a factual assistant.
 Answer ONLY using the context below.
@@ -127,16 +120,15 @@ Question:
 Answer:
 """
 
-    # 4. Generate answer (single call)
+    
     raw = llm_generate(prompt)
     raw_text = raw.strip()
 
-    # ---- HARD STOP / CLEANUP (CRITICAL FIX) ----
-    # Start after first "Answer:"
+   
     if "Answer:" in raw_text:
         raw_text = raw_text.split("Answer:", 1)[1]
 
-    # Stop if model starts another question
+    
     stop_tokens = ["\nQuestion:", "\n\nQuestion:"]
     for token in stop_tokens:
         if token in raw_text:
@@ -144,7 +136,7 @@ Answer:
 
     raw_answer = raw_text.strip()
 
-    # 5. Build response
+
     sources = [
         {
             "source": r["source"],
