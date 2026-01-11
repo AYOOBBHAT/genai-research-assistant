@@ -5,3 +5,7 @@ faiss-cpu
 transformers
 pydantic
 python-dotenv
+tavily-python
+python-dotenv
+pypdf
+python-multipart
