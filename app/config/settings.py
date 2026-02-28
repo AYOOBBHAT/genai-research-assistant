@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 # Confidence gating
-CONFIDENCE_THRESHOLD = 0.71
+CONFIDENCE_THRESHOLD = 0.7
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -13,4 +13,4 @@ UPLOAD_DIR = BASE_DIR / "data" / "uploads"
 # Ensure upload directory exists
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-CONFIDENCE_THRESHOLD = 0.65
+
